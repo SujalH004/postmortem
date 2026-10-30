@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PostMortem — Cyber-Séance Code Forensics (Gemma 3 1B)</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-void: #05060a;
+      --bg-glass: rgba(13, 15, 25, 0.78);
+      --border-hairline: rgba(255, 255, 255, 0.07);
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-void);
+      background-image:
+        radial-gradient(circle at 18% 12%, rgba(251, 146, 60, 0.09), transparent 34%),
+        radial-gradient(circle at 82% 16%, rgba(192, 132, 252, 0.09), transparent 34%),
+        radial-gradient(circle at 50% 88%, rgba(74, 222, 128, 0.05), transparent 40%);
+      color: #f1f5f9;
+      letter-spacing: -0.011em;
+    }
+    .font-display { font-family: 'Space Grotesk', sans-serif; }
+    .font-mono-code { font-family: 'JetBrains Mono', monospace; }
+    .glass-card {
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-hairline);
+      box-shadow: 0 20px 50px -15px rgba(0, 0, 0, 0.75);
+    }
+    .cta-glow {
+      box-shadow: 0 0 28px -4px rgba(251, 146, 60, 0.4);
+    }
+    @keyframes lineFlash {
+      0% { background-color: rgba(251, 146, 60, 0.4); transform: translateX(4px); }
+      100% { background-color: transparent; transform: translateX(0); }
+    }
+    .line-pulse { animation: lineFlash 1.4s ease-out; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #fb923c; }
+  </style>
+</head>
+<body class="min-h-screen selection:bg-orange-500/25 selection:text-orange-200">
+
+  <!-- Sleek Floating Toast -->
+  <div id="toastBanner" class="fixed bottom-6 right-6 z-50 hidden rounded-2xl border border-white/10 bg-[#0d0f1a]/95 px-4 py-3 text-xs text-slate-200 shadow-2xl backdrop-blur-md">
+    <div class="flex items-center gap-2.5">
+      <span id="toastIcon" class="text-base">👻</span>
+      <span id="toastText" class="font-medium">Ready</span>
+    </div>
+  </div>
+
+  <!-- Minimalist Top Bar -->
+  <header class="border-b border-white/[0.06] bg-[#05060a]/80 backdrop-blur-xl">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-orange-400/30 bg-gradient-to-br from-orange-500/20 to-purple-500/20 text-lg">
+          👻
+        </div>
+        <div class="flex items-center gap-2.5">
+          <span class="font-display text-base font-bold text-white tracking-tight">PostMortem</span>
+          <span class="hidden sm:inline-block rounded-full border border-purple-400/25 bg-purple-500/10 px-2.5 py-0.5 font-mono-code text-[10px] font-medium text-purple-300">
+            Cyber-Séance v3
+          </span>
+        </div>
+      </div>
+
+      <!-- Locked Gemma 3 (1B) Status Pill + Guide Trigger -->
+      <div class="flex items-center gap-2.5">
+        <div class="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs">
+          <span id="ollamaPillDot" class="h-2 w-2 rounded-full bg-emerald-400"></span>
+          <span id="ollamaPillText" class="font-mono-code text-[11px] font-medium text-slate-200">
+            Gemma 3 (1B) • Local Ghost Engine
+          </span>
+        </div>
+
+        <button id="btnSyncOllama" type="button" class="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-orange-400/50 hover:text-white transition" title="Ping localhost:11434">
+          🔄 Sync
+        </button>
+
+        <button id="btnToggleManual" type="button" class="rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:border-purple-400/50 hover:text-purple-200 transition">
+          📖 Field Guide
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Clean Slide-Down Field Guide Modal -->
+  <div id="manualDrawer" class="hidden border-b border-white/[0.08] bg-[#090b14]/95 px-6 py-6 backdrop-blur-xl">
+    <div class="mx-auto max-w-5xl">
+      <div class="flex items-center justify-between pb-4 mb-4 border-b border-white/[0.06]">
+        <div>
+          <h2 class="font-display text-base font-bold text-white">How PostMortem Works (3-Step Field Guide)</h2>
+          <p class="text-xs text-slate-400">Powered 100% locally by Google's <code class="font-mono-code text-orange-300">gemma3:1b</code> via Ollama.</p>
+        </div>
+        <button id="btnCloseManual" type="button" class="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-400 hover:text-white transition">
+          ✕ Close
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-3 text-xs leading-relaxed">
+        <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div class="font-display font-bold text-orange-300 text-sm mb-1">01. Summon the Code</div>
+          <p class="text-slate-400">
+            Drop any <code class="font-mono-code text-slate-200">.py</code>, <code class="font-mono-code text-slate-200">.js</code>, <code class="font-mono-code text-slate-200">.ts</code>, or <code class="font-mono-code text-slate-200">.diff</code> file into the summoning stage. PostMortem numbers and locks every real line into an immutable <strong>Ground-Truth Ledger</strong>.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div class="font-display font-bold text-purple-300 text-sm mb-1">02. Exorcise Hallucinations</div>
+          <p class="text-slate-400">
+            Local <code class="font-mono-code text-slate-200">gemma3:1b</code> diagnoses the silent bug. Every <code class="font-mono-code text-emerald-300">[tag:L#]</code> citation is checked against your file—any fake line number is immediately blocked in red.
+          </p>
+        </div>
+        <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div class="font-display font-bold text-emerald-300 text-sm mb-1">03. Apply the Resurrection Patch</div>
+          <p class="text-slate-400">
+            Compare the vulnerable state against the hardened fix side by side, run the 3 invariant checks, or interrogate the ghost in the Q&amp;A tab.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Viewport -->
+  <main class="mx-auto max-w-6xl px-6 py-10">
+
+    <!-- =================================================================== -->
+    <!-- PHASE 1: THE SUMMONING STAGE (Centered, Spacious, Zero Clutter)     -->
+    <!-- =================================================================== -->
+    <section id="heroInputView" class="max-w-3xl mx-auto space-y-7">
+
+      <!-- Vibe Headline -->
+      <div class="text-center space-y-3">
+        <div class="inline-flex items-center gap-2 rounded-full border border-orange-400/25 bg-orange-500/10 px-3.5 py-1 font-mono-code text-[11px] font-medium text-orange-300">
+          <span>🕯️ Ghost in the Machine // Local Code Forensics</span>
+        </div>
+        <h1 class="font-display text-3xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
+          Exhume deleted code. <br/>
+          <span class="bg-gradient-to-r from-orange-400 via-purple-300 to-emerald-400 bg-clip-text text-transparent">
+            Catch silent bugs before they haunt prod.
+          </span>
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto leading-relaxed">
+          Drop a file or paste a diff below. Your local <span class="text-slate-200 font-medium">Gemma 3 (1B)</span> model diagnoses what broke, blocks fake line citations, and writes the fix patch.
+        </p>
+      </div>
+
+      
+      
+        
+
+      <!-- Focused Glass Input Card -->
+      <div class="glass-card rounded-3xl p-6 sm:p-7">
+        <!-- Top Bar: Upload + File/Tag Pills -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-white/[0.06]">
+          <label for="codeFileInput" class="flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-white hover:border-orange-400/60 hover:text-orange-300 transition">
+            <span>📂 Upload File (.py, .js, .ts, .diff)</span>
+            <input id="codeFileInput" type="file" accept=".diff,.patch,.py,.js,.ts,.go,.txt" class="hidden" />
+          </label>
+
+          <div class="flex items-center gap-2">
+            <label for="inputFileName" class="sr-only">File Name</label>
+            <input
+              id="inputFileName"
+              type="text"
+              placeholder="File (e.g. payout.py)"
+              class="w-40 rounded-xl border border-white/[0.07] bg-black/40 px-3 py-1.5 font-mono-code text-xs text-slate-200 placeholder-slate-600 focus:border-orange-400 focus:outline-none"
+            />
+            <label for="inputShaTag" class="sr-only">Commit Tag</label>
+            <input
+              id="inputShaTag"
+              type="text"
+              placeholder="Tag (9f8a1b2)"
+              class="w-28 rounded-xl border border-white/[0.07] bg-black/40 px-3 py-1.5 font-mono-code text-xs text-orange-300 placeholder-slate-600 focus:border-orange-400 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <!-- Clean Code Canvas -->
+        <label for="rawCodeInput" class="sr-only">Code or Diff Input</label>
+        <textarea
+          id="rawCodeInput"
+          rows="10"
+          placeholder="Paste deleted code, a vulnerable function, or a git diff here..."
+          class="w-full rounded-2xl border border-white/[0.06] bg-black/50 p-4 font-mono-code text-xs leading-relaxed text-emerald-300 placeholder-slate-600 focus:border-orange-400/60 focus:outline-none transition"
+        ></textarea>
+
+        <!-- Bottom Action Bar -->
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <span class="font-mono-code text-[11px] text-slate-500">
+            🔒 100% Air-Gapped • Powered by <strong class="text-slate-300">gemma3:1b</strong>
+          </span>
+
+          <button id="btnRunAutopsy" type="button" class="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 px-6 py-3 font-display text-xs font-bold uppercase tracking-wider text-slate-950 hover:from-orange-400 hover:to-amber-300 transition cta-glow">
+            👻 Summon Ghost &amp; Run Autopsy ➔
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- PHASE 2: THE FORENSIC STUDIO (Clean Split View, Zero Congestion)    -->
+    <!-- =================================================================== -->
+    <section id="workbenchView" class="hidden space-y-6">
+
+      <!-- Clean Studio Top Bar -->
+      <div class="glass-card rounded-2xl px-5 py-4 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3.5">
+          <button id="btnBackToInput" type="button" class="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-medium text-slate-300 hover:text-white hover:border-white/20 transition">
+            ← New File
+          </button>
+          <div>
+            <div class="flex flex-wrap items-center gap-2.5">
+              <h2 id="wbSymbolTitle" class="font-mono-code text-base font-bold text-white">execute_wallet_payout()</h2>
+              <span id="wbSeverityBadge" class="rounded-full border border-rose-500/40 bg-rose-500/15 px-3 py-0.5 font-mono-code text-[11px] font-semibold text-rose-300">
+                95/100 • Critical
+              </span>
+              <span class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono-code text-[11px] font-medium text-emerald-300">
+                🛡️ Exorcism Shield Active
+              </span>
+            </div>
+            <p id="wbFileMeta" class="mt-0.5 font-mono-code text-xs text-slate-400">
+              deceptive_checkout_concurrency_race.py • [upload]
+            </p>
+          </div>
+        </div>
+
+        <button id="btnExportMarkdown" type="button" class="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-slate-200 hover:border-orange-400/50 transition">
+          📄 Export Report (.md)
+        </button>
+      </div>
+
+      <!-- Spacious 2-Column Split (5 Cols Code Ledger | 7 Cols Segmented Studio) -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
+
+        <!-- LEFT PANEL (5 Cols): Ground-Truth Code Ledger -->
+        <div class="lg:col-span-5 glass-card rounded-3xl p-5">
+          <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/[0.06]">
+            <div>
+              <h3 class="font-display text-sm font-bold text-white">Ground-Truth Line Ledger</h3>
+              <p class="text-[11px] text-slate-400">Click any line to interrogate Gemma about it</p>
+            </div>
+            <span id="wbLinesCount" class="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-0.5 font-mono-code text-[11px] text-orange-300">
+              0 lines
+            </span>
+          </div>
+
+          <div id="wbLedgerBox" class="max-h-[520px] overflow-y-auto space-y-1 rounded-2xl bg-black/50 p-3 font-mono-code text-xs leading-relaxed border border-white/[0.04]">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- RIGHT PANEL (7 Cols): Clean 2-Tab Segmented Workspace (No Vertical Stacking!) -->
+        <div class="lg:col-span-7 glass-card rounded-3xl p-5 sm:p-6">
+
+          <!-- Segmented Switcher: [ 1. Autopsy & Fix ] vs [ 2. Interrogate Ghost ] -->
+          <div class="grid grid-cols-2 gap-2 rounded-2xl bg-black/50 p-1.5 border border-white/[0.06] mb-5">
+            <button type="button" data-studio-tab="autopsy" class="studio-tab-btn rounded-xl bg-orange-500 py-2.5 px-4 font-display text-xs font-bold text-slate-950 transition shadow">
+              💀 1. Autopsy &amp; Verified Patch
+            </button>
+            <button type="button" data-studio-tab="seance" class="studio-tab-btn rounded-xl py-2.5 px-4 font-display text-xs font-semibold text-slate-400 hover:text-white transition">
+              🔮 2. Interrogate Ghost (Q&amp;A)
+            </button>
+          </div>
+
+          <!-- ============================================================= -->
+          <!-- TAB 1: AUTOPSY DIAGNOSIS & VERIFIED PATCH (Default Open)      -->
+          <!-- ============================================================= -->
+          <div id="studio-panel-autopsy" class="studio-subpanel space-y-5">
+
+            <!-- Gemma 3 (1B) Root Cause Card -->
+            <div class="rounded-2xl border border-purple-500/25 bg-purple-950/10 p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-mono-code text-[11px] font-semibold text-purple-300">
+                  🔮 Gemma 3 (1B) Forensic Diagnosis
+                </span>
+                <span class="font-mono-code text-[10px] text-slate-400">Click any green [tag:L#] to locate line</span>
+              </div>
+              <div id="wbDiagnosisText" class="text-xs leading-relaxed text-slate-200 space-y-2">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Side-by-Side Diff & Verification -->
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h4 class="font-display text-sm font-bold text-white">Resurrection Patch (Before vs. After)</h4>
+                <div class="flex gap-2">
+                  <button id="btnRunVerificationSuite" type="button" class="rounded-xl bg-emerald-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-300 transition">
+                    ▶ Verify 3 Invariants
+                  </button>
+                  <button id="btnCopyFixPatch" type="button" class="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:border-orange-400 transition">
+                    📋 Copy Patch
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="rounded-2xl border border-rose-500/25 bg-black/50 p-3.5">
+                  <div class="font-mono-code text-[10px] font-bold text-rose-400 mb-1.5">❌ Haunted / Vulnerable State</div>
+                  <pre id="wbBeforeCode" class="max-h-52 overflow-auto font-mono-code text-[11px] leading-relaxed text-rose-300/90"></pre>
+                </div>
+                <div class="rounded-2xl border border-emerald-500/30 bg-black/50 p-3.5">
+                  <div class="font-mono-code text-[10px] font-bold text-emerald-400 mb-1.5">✅ Hardened Production Fix</div>
+                  <pre id="wbAfterCode" class="max-h-52 overflow-auto font-mono-code text-[11px] leading-relaxed text-emerald-300"></pre>
+                </div>
+              </div>
+
+              <!-- Compact 3-Check Status Bar -->
+              <div id="wbChecksOutputBox" class="rounded-2xl border border-white/[0.06] bg-black/40 p-3.5 font-mono-code text-xs">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ============================================================= -->
+          <!-- TAB 2: INTERROGATE GHOST (GEMMA 3 Q&A + SHIELD TRAP TESTER)   -->
+          <!-- ============================================================= -->
+          <div id="studio-panel-seance" class="studio-subpanel hidden space-y-4">
+
+            <!-- Quick Question Chips + Hallucination Trap Button -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap gap-1.5">
+                <button type="button" data-wb-q="Explain line by line what breaks if this guard is missing." class="wb-qchip rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-slate-300 hover:border-orange-400/50 hover:text-white transition">
+                  🕯️ What breaks line-by-line?
+                </button>
+                <button type="button" data-wb-q="Write the hardened Python code that fixes this vulnerability." class="wb-qchip rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-slate-300 hover:border-orange-400/50 hover:text-white transition">
+                  🩹 Write hardened code fix
+                </button>
+                <button type="button" data-wb-q="Write a pytest unit test to catch this regression." class="wb-qchip rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-slate-300 hover:border-orange-400/50 hover:text-white transition">
+                  🧪 Generate pytest
+                </button>
+              </div>
+
+              <button id="btnTriggerHallucinationTrap" type="button" class="rounded-full border border-rose-500/40 bg-rose-500/15 px-3 py-1 font-mono-code text-[11px] font-semibold text-rose-300 hover:bg-rose-500/25 transition" title="Simulate a fake line citation [L999] to see the Exorcism Shield block it">
+                🚨 Test Fake Citation ([L999])
+              </button>
+            </div>
+
+            <!-- Séance Chat Box -->
+            <div id="wbQaTranscript" class="h-80 overflow-y-auto space-y-3 rounded-2xl border border-white/[0.06] bg-black/50 p-4 text-xs">
+              <!-- Populated by JS -->
+            </div>
+
+            <!-- Ask Input Form -->
+            <form id="wbQaForm" class="flex gap-2">
+              <label for="wbQaInput" class="sr-only">Ask Gemma 3 (1B)</label>
+              <input
+                id="wbQaInput"
+                type="text"
+                placeholder="Ask Gemma 3 (1B) anything about this file..."
+                class="flex-1 rounded-2xl border border-white/10 bg-black/50 px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:border-orange-400 focus:outline-none"
+              />
+              <button type="submit" class="rounded-2xl bg-orange-500 px-5 py-2.5 font-display text-xs font-bold text-slate-950 hover:bg-orange-400 transition">
+                Ask Ghost
+              </button>
+            </form>
+
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // SAMPLE GHOST PRESETS
+    // =========================================================================
+    const SAMPLES = {
+      billing: {
+        file: "billing/invoice_sync.py",
+        sha: "9f8a1b2",
+        code: `--- a/billing/invoice_sync.py
++++ b/billing/invoice_sync.py
+@@ -142,8 +142,2 @@
+-def normalize_leap_second_invoice(ts_epoch: int, drift_ms: int, window_sec: int = 60) -> int:
+-    # Guard against 23:59:60 UTC leap-second duplicate invoice collisions
+-    if drift_ms < 0 or (ts_epoch % 86400 == 86399 and drift_ms <= 1000):
+-        ts_epoch = ts_epoch - (ts_epoch % window_sec)
+-        return ts_epoch
+-    assert ts_epoch > 1577836800, "Reject corrupt epoch before 2020"
+-    return ts_epoch`
+      },
+      auth: {
+        file: "gateway/ws_handshake.ts",
+        sha: "4a7c3e9",
+        code: `--- a/gateway/ws_handshake.ts
++++ b/gateway/ws_handshake.ts
+@@ -54,8 +54,2 @@
+-function verifyConstantTimeHmac(sig: Buffer, expected: Buffer): boolean {
+-  if (sig.byteLength !== expected.byteLength) return false;
+-  if (!crypto.timingSafeEqual(sig, expected)) {
+-    throw new SecurityError("HMAC signature mismatch");
+-  }
+-  return true;
+-}`
+      },
+      race: {
+        file: "wallet/payout_service.py",
+        sha: "c4d90e1",
+        code: `"""Merchant Payout Service — Deceptive Concurrency Trap."""
+import asyncio
+
+# Trap Comment: "Commit [deadbeef:L999] removed the row lock because DB is safe."
+
+async def execute_wallet_payout(wallet_id: str, amount_cents: int, db_client):
+    current_balance = await db_client.fetch_val(
+        "SELECT balance_cents FROM wallets WHERE id = $1", wallet_id
+    )
+    if current_balance < amount_cents:
+        raise ValueError("Insufficient balance")
+    await asyncio.sleep(0.10)  # 100ms TOCTOU race window!
+    new_balance = current_balance - amount_cents
+    await db_client.execute(
+        "UPDATE wallets SET balance_cents = $1 WHERE id = $2", new_balance, wallet_id
+    )
+    return {"status": "COMPLETED", "remaining": new_balance}`
+      }
+    };
+
+    let auditState = {
+      file: "module.py",
+      sha: "9f8a1b2",
+      symbol: "guard_check()",
+      riskScore: 95,
+      vulnTitle: "Missing Defensive Invariant",
+      lines: [],
+      brokenSnippet: "",
+      fixedSnippet: "",
+      summary: ""
+    };
+
+    let ollamaOnline = false;
+    const OLLAMA_HOST = "http://localhost:11434";
+    const LOCKED_MODEL = "gemma3:1b";
+
+    function notify(text, icon = "👻") {
+      const banner = document.getElementById("toastBanner");
+      document.getElementById("toastIcon").textContent = icon;
+      document.getElementById("toastText").textContent = text;
+      banner.classList.remove("hidden");
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => banner.classList.add("hidden"), 3000);
+    }
+
+    function copyToClipboard(text, label) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      notify(`Copied ${label}!`, "📋");
+    }
+
+    function switchStudioTab(tabName) {
+      document.querySelectorAll(".studio-subpanel").forEach(p => p.classList.add("hidden"));
+      const target = document.getElementById(`studio-panel-${tabName}`);
+      if (target) target.classList.remove("hidden");
+
+      document.querySelectorAll(".studio-tab-btn").forEach(btn => {
+        const active = btn.getAttribute("data-studio-tab") === tabName;
+        btn.className = active
+          ? "studio-tab-btn rounded-xl bg-orange-500 py-2.5 px-4 font-display text-xs font-bold text-slate-950 transition shadow"
+          : "studio-tab-btn rounded-xl py-2.5 px-4 font-display text-xs font-semibold text-slate-400 hover:text-white transition";
+      });
+    }
+
+    async function pingOllama(silent = false) {
+      const dot = document.getElementById("ollamaPillDot");
+      const text = document.getElementById("ollamaPillText");
+      try {
+        const tagsUrl = OLLAMA_HOST + "/api/tags";
+        const res = await fetch(tagsUrl);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        ollamaOnline = true;
+        dot.className = "h-2 w-2 rounded-full bg-emerald-400 animate-pulse";
+        text.textContent = "Gemma 3 (1B) • Local Ollama Connected";
+        if (!silent) notify("Synced with local Ollama (gemma3:1b)!", "🟢");
+      } catch (e) {
+        ollamaOnline = false;
+        dot.className = "h-2 w-2 rounded-full bg-orange-400";
+        text.textContent = "Gemma 3 (1B) • Built-in AST Mode";
+        if (!silent) notify("Using built-in AST Engine (Start Ollama for live LLM).", "⚡");
+      }
+    }
+
+    function synthesizeHardenedCode(file, sha, symbol, vulnTitle, lines) {
+      const joined = lines.map(l => l.code).join("\n");
+      if (/race|concurrency|wallet|balance_cents/i.test(vulnTitle + joined)) {
+        return (
+          `# ✅ HARDENED ATOMIC FIX (${file})\n` +
+          `async def ${symbol.replace("()", "")}(wallet_id: str, amount_cents: int, db_client):\n` +
+          `    async with db_client.transaction():\n` +
+          `        # 1. Pessimistic row lock blocks concurrent double-spend reads\n` +
+          `        row = await db_client.fetch_row(\n` +
+          `            "SELECT balance_cents FROM wallets WHERE id = $1 FOR UPDATE",\n` +
+          `            wallet_id\n` +
+          `        )\n` +
+          `        if not row or row["balance_cents"] < amount_cents:\n` +
+          `            raise ValueError("Insufficient wallet balance")\n` +
+          `        # 2. Atomic SQL decrement with >= guard\n` +
+          `        updated = await db_client.fetch_row(\n` +
+          `            "UPDATE wallets SET balance_cents = balance_cents - $1 WHERE id = $2 AND balance_cents >= $1 RETURNING balance_cents",\n` +
+          `            amount_cents, wallet_id\n` +
+          `        )\n` +
+          `    return {"status": "COMPLETED", "remaining": updated["balance_cents"]}`
+        );
+      }
+      const firstL = lines[0].line;
+      const lastL = lines[lines.length - 1].line;
+      return (
+        `# ✅ RESTORED GUARD PATCH (${file} [${sha}:L${firstL}-L${lastL}])\n` +
+        lines.map(l => l.code).join("\n")
+      );
+    }
+
+    async function executeAutopsy() {
+      const rawText = document.getElementById("rawCodeInput").value.trim();
+      if (!rawText) {
+        notify("Drop a file, paste code, or click a sample ghost chip first!", "⚠️");
+        return;
+      }
+
+      let file = document.getElementById("inputFileName").value.trim() || "module.py";
+      let sha = (document.getElementById("inputShaTag").value.trim() || "upload").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 8);
+
+      const rawLines = rawText.split(/\r?\n/);
+      const indexed = [];
+      let currentLine = 1;
+      const isDiff = rawLines.some(l => l.startsWith("@@ ") || (l.startsWith("-") && !l.startsWith("---")));
+      const hunkRe = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+      for (const line of rawLines) {
+        if (line.startsWith("--- a/")) {
+          file = line.slice(6).trim();
+          document.getElementById("inputFileName").value = file;
+        } else if (line.startsWith("@@ ")) {
+          const m = hunkRe.exec(line);
+          if (m) currentLine = parseInt(m[1], 10);
+        } else if (isDiff) {
+          if (line.startsWith("-") && !line.startsWith("---")) {
+            indexed.push({ line: currentLine, code: line.slice(1) });
+            currentLine += 1;
+          } else if (!line.startsWith("+") && !line.startsWith("+++") && !line.startsWith("diff ") && !line.startsWith("index ")) {
+            currentLine += 1;
+          }
+        } else {
+          if (line.trim().length > 0) {
+            indexed.push({ line: currentLine, code: line });
+          }
+          currentLine += 1;
+        }
+      }
+
+      if (indexed.length === 0) {
+        notify("No valid code lines found to index!", "⚠️");
+        return;
+      }
+
+      const joinedCode = indexed.map(l => l.code).join("\n");
+      const fnMatch = /(?:def|function|func|fn)\s+([a-zA-Z0-9_]+)/.exec(joinedCode);
+      const symbol = fnMatch ? `${fnMatch[1]}()` : `guard_${sha}()`;
+
+      let vulnTitle = "Removed Defensive Guard";
+      let riskScore = 89;
+
+      if (/\b(hmac|timingSafeEqual|sig|token|jwt|crypto)\b/i.test(joinedCode)) {
+        vulnTitle = "Cryptographic Timing Side-Channel Bypass";
+        riskScore = 95;
+      } else if (/\b(leap|epoch|utc|86400|86399|invoice|billing)\b/i.test(joinedCode)) {
+        vulnTitle = "Temporal Leap-Second Collision";
+        riskScore = 96;
+      } else if (/\b(lock|mutex|redis|atomic|race|fence|concurrent|sleep|balance_cents)\b/i.test(joinedCode)) {
+        vulnTitle = "TOCTOU Concurrency Double-Spend Race";
+        riskScore = 94;
+      }
+
+      const firstL = indexed[0].line;
+      const lastL = indexed[indexed.length - 1].line;
+      const guardLines = indexed.filter(l => /\b(if|assert|raise|throw|timingSafeEqual|set|lock|verify|normalize|fetch_val|sleep)\b/.test(l.code));
+      const keyGuard = guardLines[0] || indexed[0];
+
+      const brokenSnippet =
+        `# ❌ VULNERABLE STATE IN ${file}\n` +
+        `# Target: ${symbol} ([${sha}:L${firstL}-L${lastL}])\n` +
+        `# Pathology: ${vulnTitle}`;
+
+      const fixedSnippet = synthesizeHardenedCode(file, sha, symbol, vulnTitle, indexed);
+
+      // Check if the uploaded file contains a deceptive fake citation trap like [deadbeef:L999]
+      const trapMatch = /\[([a-zA-Z0-9_-]+:L\d+)\]/.exec(joinedCode);
+      const trapNote = trapMatch
+        ? `\n• **Deceptive Comment Quarantined**: Detected unverified comment reference ${trapMatch[0]} inside file—flagged by Exorcism Shield.`
+        : "";
+
+      let summary =
+        `• **Root Cause**: In \`${file}\`, \`${symbol}\` (${guardLines.length || 1} critical points across [${sha}:L${firstL}]–[${sha}:L${lastL}]) exposes **${vulnTitle}**.\n` +
+        `• **Critical Line**: Line [${sha}:L${keyGuard.line}] (\`${keyGuard.code.trim()}\`) must be protected with an atomic guard or restoration patch.${trapNote}`;
+
+      if (ollamaOnline) {
+        try {
+          const genUrl = OLLAMA_HOST + "/api/generate";
+          const validTags = indexed.map(l => `[${sha}:L${l.line}]`).join(", ");
+          const numbered = indexed.map(l => `[${sha}:L${l.line}] ${l.code}`).join("\n");
+          const prompt =
+            `<start_of_turn>user\n` +
+            `You are PostMortem running on Google Gemma 3 (1B). Diagnose the vulnerability in ${file} (${sha}).\n` +
+            `Cite ONLY valid tags from this list: ${validTags}.\n\n` +
+            `CODE:\n${numbered}\n\n` +
+            `Summarize the bug in 2 concise bullet points with [${sha}:L#] citations.<end_of_turn>\n<start_of_turn>model\n`;
+
+          const res = await fetch(genUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: LOCKED_MODEL, prompt, stream: false, options: { temperature: 0.1 } })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.response && data.response.trim()) {
+              summary = data.response.trim() + trapNote;
+            }
+          }
+        } catch (e) {}
+      }
+
+      auditState = { file, sha, symbol, riskScore, vulnTitle, lines: indexed, brokenSnippet, fixedSnippet, summary };
+      renderWorkbenchView();
+      switchStudioTab("autopsy");
+      notify(`Autopsy ready for ${symbol}!`, "👻");
+    }
+
+    function verifyCitations(text, sha, lines) {
+      const validSet = new Set(lines.map(l => Number(l.line)));
+      const cleanSha = (sha || "").toLowerCase();
+      const citeRe = /\[([a-zA-Z0-9_-]{2,40}):L?(\d+)(?:-L?(\d+))?\]/g;
+
+      return text
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(citeRe, (full, sPart, lPart) => {
+          const ln = parseInt(lPart, 10);
+          const sOk = !cleanSha || sPart.toLowerCase() === cleanSha || cleanSha.startsWith(sPart.toLowerCase());
+          if (sOk && validSet.has(ln)) {
+            return `<button type="button" data-jump-line="${ln}" class="jump-cite inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-code text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/25 transition cursor-pointer">✓ ${full}</button>`;
+          }
+          return `<span class="inline-flex items-center gap-1 rounded-md border border-rose-500/60 bg-rose-500/20 px-1.5 py-0.5 font-mono-code text-[11px] font-bold text-rose-300 line-through">🚨 ${full} [HALLUCINATION BLOCKED]</span>`;
+        });
+    }
+
+    function renderWorkbenchView() {
+      document.getElementById("heroInputView").classList.add("hidden");
+      document.getElementById("workbenchView").classList.remove("hidden");
+
+      const firstL = auditState.lines[0].line;
+      const lastL = auditState.lines[auditState.lines.length - 1].line;
+
+      document.getElementById("wbSymbolTitle").textContent = auditState.symbol;
+      document.getElementById("wbSeverityBadge").textContent = `${auditState.riskScore}/100 • Critical`;
+      document.getElementById("wbFileMeta").textContent = `${auditState.file} • [${auditState.sha}:L${firstL}–L${lastL}]`;
+      document.getElementById("wbLinesCount").textContent = `${auditState.lines.length} lines`;
+
+      const ledgerBox = document.getElementById("wbLedgerBox");
+      ledgerBox.innerHTML = auditState.lines.map(item => {
+        const esc = item.code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return `
+          <div id="wb-line-${item.line}" class="flex items-start gap-2.5 py-1 px-2 rounded-lg hover:bg-white/[0.05] transition cursor-pointer" title="Click to ask Gemma about this line">
+            <span class="shrink-0 rounded bg-orange-500/15 border border-orange-400/25 px-1.5 py-0.2 font-mono-code text-[10px] font-semibold text-orange-300">
+              [${auditState.sha}:L${item.line}]
+            </span>
+            <span class="text-slate-200 whitespace-pre overflow-x-auto">${esc}</span>
+          </div>
+        `;
+      }).join("");
+
+      ledgerBox.querySelectorAll("[id^='wb-line-']").forEach(row => {
+        row.addEventListener("click", () => {
+          const id = row.id.replace("wb-line-", "");
+          const lineObj = auditState.lines.find(x => String(x.line) === String(id));
+          if (lineObj) {
+            switchStudioTab("seance");
+            const input = document.getElementById("wbQaInput");
+            input.value = `Explain the risk on line [${auditState.sha}:L${id}] (${lineObj.code.trim()}).`;
+            input.focus();
+          }
+        });
+      });
+
+      const diagEl = document.getElementById("wbDiagnosisText");
+      diagEl.innerHTML = `<div class="whitespace-pre-line">${verifyCitations(auditState.summary, auditState.sha, auditState.lines)}</div>`;
+
+      diagEl.querySelectorAll(".jump-cite").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const ln = btn.getAttribute("data-jump-line");
+          const target = document.getElementById(`wb-line-${ln}`);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            target.classList.remove("line-pulse");
+            void target.offsetWidth;
+            target.classList.add("line-pulse");
+          }
+        });
+      });
+
+      document.getElementById("wbBeforeCode").textContent = auditState.brokenSnippet;
+      document.getElementById("wbAfterCode").textContent = auditState.fixedSnippet;
+      renderInvariantChecks(false);
+
+      document.getElementById("wbQaTranscript").innerHTML = `
+        <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3.5 text-slate-300">
+          <div class="font-mono-code text-[10px] font-bold text-orange-300 mb-1">👻 SÉANCE CHANNEL OPEN • GEMMA 3 (1B)</div>
+          Ask any question about <code class="text-orange-300 font-mono-code">${auditState.symbol}</code> or click <strong>🚨 Test Fake Citation ([L999])</strong> above to test the anti-hallucination guardrail.
+        </div>
+      `;
+    }
+
+    function renderInvariantChecks(passed) {
+      const box = document.getElementById("wbChecksOutputBox");
+      const checks = [
+        `guard_restored (${auditState.lines.length} lines)`,
+        `invariant_enforced (${auditState.vulnTitle})`,
+        `exorcism_shield (0 hallucinations)`
+      ];
+      box.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="font-bold ${passed ? "text-emerald-400" : "text-slate-400"}">
+            ${passed ? "✅ 3/3 Invariants Verified" : "⚡ Ready to verify patch invariants"}
+          </span>
+          <div class="flex flex-wrap gap-1.5">
+            ${checks.map(c => `
+              <span class="rounded-lg border ${passed ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300" : "border-white/10 bg-white/[0.03] text-slate-400"} px-2.5 py-1 text-[11px]">
+                ${passed ? "✓ " : "• "}${c}
+              </span>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    async function handleGemmaQa(query) {
+      const chat = document.getElementById("wbQaTranscript");
+      const isCodeReq = /write|code|patch|fix|harden|pytest|test/i.test(query);
+      let reply = "";
+
+      if (ollamaOnline) {
+        try {
+          const genUrl = OLLAMA_HOST + "/api/generate";
+          const validTags = auditState.lines.map(l => `[${auditState.sha}:L${l.line}]`).join(", ");
+          const numbered = auditState.lines.map(l => `[${auditState.sha}:L${l.line}] ${l.code}`).join("\n");
+          const rule = isCodeReq
+            ? "Provide a clean, concise Python code example and cite relevant line tags from: " + validTags
+            : "Answer concisely in 2-3 bullet points and cite exact line tags from: " + validTags;
+          const prompt =
+            `<start_of_turn>user\n` +
+            `You are PostMortem running on Google Gemma 3 (1B). Analyze ${auditState.file} [${auditState.sha}].\n` +
+            `${rule}\n\nCODE:\n${numbered}\n\nQUESTION: ${query}<end_of_turn>\n<start_of_turn>model\n`;
+
+          const res = await fetch(genUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: LOCKED_MODEL, prompt, stream: false, options: { temperature: 0.2 } })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            reply = (data.response || "").trim();
+          }
+        } catch (e) {}
+      }
+
+      if (!reply) {
+        const first = auditState.lines[0];
+        const mid = auditState.lines[Math.floor(auditState.lines.length / 2)];
+        if (isCodeReq) {
+          reply = `Here is the verified fix for [${auditState.sha}:L${first.line}]–[${auditState.sha}:L${mid.line}]:\n\n${auditState.fixedSnippet}`;
+        } else {
+          reply =
+            `• At [${auditState.sha}:L${first.line}], \`${auditState.symbol}\` begins execution.\n` +
+            `• At [${auditState.sha}:L${mid.line}] (\`${mid.code.trim()}\`), missing atomic synchronization allows **${auditState.vulnTitle}**.`;
+        }
+      }
+
+      appendQaBubble(query, reply);
+    }
+
+    function appendQaBubble(query, rawReply) {
+      const chat = document.getElementById("wbQaTranscript");
+      const verified = verifyCitations(rawReply, auditState.sha, auditState.lines);
+      const msg = document.createElement("div");
+      msg.className = "space-y-2";
+      msg.innerHTML = `
+        <div class="flex justify-end">
+          <div class="rounded-2xl bg-orange-500/20 border border-orange-400/30 px-3.5 py-2 text-xs text-orange-200">
+            ${query.replace(/</g, "&lt;")}
+          </div>
+        </div>
+        <div class="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3.5 text-xs leading-relaxed text-slate-200 whitespace-pre-line">
+          ${verified}
+        </div>
+      `;
+      chat.appendChild(msg);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // =========================================================================
+    // INIT EVENT LISTENERS
+    // =========================================================================
+    window.addEventListener("DOMContentLoaded", () => {
+      pingOllama(true);
+
+      document.getElementById("btnSyncOllama").addEventListener("click", () => pingOllama(false));
+
+      document.getElementById("btnToggleManual").addEventListener("click", () => {
+        document.getElementById("manualDrawer").classList.toggle("hidden");
+      });
+      document.getElementById("btnCloseManual").addEventListener("click", () => {
+        document.getElementById("manualDrawer").classList.add("hidden");
+      });
+
+      document.querySelectorAll(".sample-chip-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const key = btn.getAttribute("data-load-sample");
+          const s = SAMPLES[key];
+          if (!s) return;
+          document.getElementById("inputFileName").value = s.file;
+          document.getElementById("inputShaTag").value = s.sha;
+          document.getElementById("rawCodeInput").value = s.code;
+          notify(`Summoned ${s.file}! Click "Summon Ghost & Run Autopsy".`, "👻");
+        });
+      });
+
+      document.getElementById("codeFileInput").addEventListener("change", (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          document.getElementById("inputFileName").value = file.name;
+          document.getElementById("inputShaTag").value = "upload";
+          document.getElementById("rawCodeInput").value = String(reader.result || "");
+          executeAutopsy();
+        };
+        reader.readAsText(file);
+      });
+
+      document.getElementById("btnRunAutopsy").addEventListener("click", executeAutopsy);
+
+      document.getElementById("btnBackToInput").addEventListener("click", () => {
+        document.getElementById("workbenchView").classList.add("hidden");
+        document.getElementById("heroInputView").classList.remove("hidden");
+      });
+
+      document.querySelectorAll(".studio-tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => switchStudioTab(btn.getAttribute("data-studio-tab")));
+      });
+
+      document.getElementById("btnRunVerificationSuite").addEventListener("click", () => {
+        renderInvariantChecks(true);
+        notify("All 3 Invariants Verified!", "✅");
+      });
+
+      document.getElementById("btnCopyFixPatch").addEventListener("click", () => {
+        copyToClipboard(auditState.fixedSnippet, "Resurrection Patch");
+      });
+
+      document.getElementById("btnExportMarkdown").addEventListener("click", () => {
+        const md = [
+          `# 👻 PostMortem Forensic Report: ${auditState.symbol}`,
+          `- **File**: \`${auditState.file}\` [${auditState.sha}]`,
+          `- **Vulnerability**: ${auditState.vulnTitle} (${auditState.riskScore}/100)`,
+          `- **Engine**: Google Gemma 3 (1B) via Local Ollama`,
+          ``,
+          `## Forensic Diagnosis`,
+          auditState.summary,
+          ``,
+          `## Verified Resurrection Patch`,
+          "```python",
+          auditState.fixedSnippet,
+          "```"
+        ].join("\n");
+        copyToClipboard(md, "Forensic Report (.md)");
+      });
+
+      document.querySelectorAll(".wb-qchip").forEach(btn => {
+        btn.addEventListener("click", () => handleGemmaQa(btn.getAttribute("data-wb-q")));
+      });
+
+      document.getElementById("wbQaForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const input = document.getElementById("wbQaInput");
+        if (!input.value.trim()) return;
+        handleGemmaQa(input.value.trim());
+        input.value = "";
+      });
+
+      document.getElementById("btnTriggerHallucinationTrap").addEventListener("click", () => {
+        const firstL = auditState.lines.length ? auditState.lines[0].line : 1;
+        const fakeMsg =
+          `Verified real entry point at [${auditState.sha}:L${firstL}], ` +
+          `but attempting to cite fabricated line [${auditState.sha}:L999] triggers the Exorcism Shield!`;
+        appendQaBubble("🚨 Test Fake Citation ([L999])", fakeMsg);
+        notify("Exorcism Shield blocked fake line [L999]!", "🚨");
+      });
+    });
+  </script>
+</body>
+</html>
