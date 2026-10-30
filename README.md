@@ -83,3 +83,6 @@ Diff / Source  ──►  Stage 1: Indexer  ──►  Stage 2: Gemma 3 (Ollama)
                                      Stage 4: Patch Synthesizer
                                      (patch + Markdown postmortem)
 ```
+## 🎥 60-Second Demo Video
+https://youtu.be/3zsXQFms8fA
+> 👆 *Click the preview above to watch the complete 60-second offline Gemma 3 (1B) autopsy demo on YouTube.*
